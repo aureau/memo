@@ -1,0 +1,199 @@
+@import "tailwindcss";
+
+/* ===========================================================================
+   Memo Design System — Tokens
+   Source: memo-design-system-019e2d18-45ab-7d6b-884c-341df20dfa82
+   =========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&family=Hanken+Grotesk:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap');
+
+:root {
+  /* --- Warm neutral ramp (paper → ink) ----------------------------------- */
+  --warm-25:  #FCFBF8;
+  --warm-50:  #FBF9F5;
+  --warm-100: #F5F1E9;
+  --warm-150: #EEE9DE;
+  --warm-200: #E7E2D7;
+  --warm-300: #D8D2C5;
+  --warm-400: #B7AF9F;
+  --warm-500: #8A857A;
+  --warm-600: #6B665C;
+  --warm-700: #4A463E;
+  --warm-800: #2B2823;
+  --warm-900: #1B1A16;
+
+  /* --- Terracotta accent ramp -------------------------------------------- */
+  --accent-50:  #FCEFE9;
+  --accent-100: #F8DDD1;
+  --accent-200: #F1C2AE;
+  --accent-300: #E89C7E;
+  --accent-400: #E27E5C;
+  --accent-500: #DD6B4F;
+  --accent-600: #C95941;
+  --accent-700: #AC4830;
+  --accent-800: #8A3A27;
+  --accent-900: #6E2F20;
+
+  /* --- "Live" recording red ---------------------------------------------- */
+  --rec-soft: #FCE7E6;
+  --rec-500:  #E5484D;
+  --rec-600:  #D23A3F;
+
+  /* --- Semantic hues ------------------------------------------------------ */
+  --green-soft: #E3F3EA;  --green-500: #2E9E6B;  --green-700: #1F7350;
+  --amber-soft: #FAEFD6;  --amber-500: #C98A2B;  --amber-700: #946212;
+  --red-soft:   #FBE7E6;  --red-500:   #CE3E3A;  --red-700:   #9E2B28;
+  --blue-soft:  #E8F0FB;  --blue-500:  #3E7BD6;  --blue-700:  #295CA8;
+
+  /* --- Semantic aliases --------------------------------------------------- */
+  --bg-app:        var(--warm-50);
+  --bg-sidebar:    var(--warm-100);
+  --surface-card:  #FFFFFF;
+  --surface-sunken:var(--warm-100);
+  --surface-input: #FFFFFF;
+  --surface-overlay: rgba(27, 26, 22, 0.32);
+
+  --text-strong:   var(--warm-900);
+  --text-body:     var(--warm-800);
+  --text-muted:    var(--warm-600);
+  --text-faint:    var(--warm-500);
+  --text-disabled: var(--warm-400);
+  --text-on-accent:#FFFFFF;
+  --text-accent:   var(--accent-700);
+  --text-link:     var(--accent-700);
+
+  --border-subtle: var(--warm-200);
+  --border-strong: var(--warm-300);
+  --border-focus:  var(--accent-500);
+  --divider:       var(--warm-200);
+
+  --accent:        var(--accent-500);
+  --accent-hover:  var(--accent-600);
+  --accent-press:  var(--accent-700);
+  --accent-tint:   var(--accent-50);
+  --accent-tint-border: var(--accent-100);
+
+  --live:          var(--rec-500);
+  --live-hover:    var(--rec-600);
+  --live-tint:     var(--rec-soft);
+
+  --success:       var(--green-500);  --success-tint: var(--green-soft);  --success-text: var(--green-700);
+  --warning:       var(--amber-500);  --warning-tint: var(--amber-soft);  --warning-text: var(--amber-700);
+  --danger:        var(--red-500);    --danger-tint:  var(--red-soft);    --danger-text:  var(--red-700);
+  --info:          var(--blue-500);   --info-tint:    var(--blue-soft);   --info-text:    var(--blue-700);
+
+  --ring: 0 0 0 3px var(--accent-100);
+
+  /* --- Radii ------------------------------------------------------------- */
+  --radius-xs:  6px;
+  --radius-sm:  8px;
+  --radius-md:  10px;
+  --radius-lg:  14px;
+  --radius-xl:  20px;
+  --radius-2xl: 28px;
+  --radius-full: 999px;
+
+  /* --- Shadows ----------------------------------------------------------- */
+  --shadow-xs: 0 1px 2px rgba(27, 26, 22, 0.05);
+  --shadow-sm: 0 1px 2px rgba(27, 26, 22, 0.05), 0 2px 4px rgba(27, 26, 22, 0.04);
+  --shadow-md: 0 2px 4px rgba(27, 26, 22, 0.05), 0 6px 16px rgba(27, 26, 22, 0.07);
+  --shadow-lg: 0 4px 8px rgba(27, 26, 22, 0.06), 0 16px 36px rgba(27, 26, 22, 0.11);
+  --shadow-xl: 0 8px 16px rgba(27, 26, 22, 0.08), 0 28px 60px rgba(27, 26, 22, 0.16);
+  --shadow-inset: inset 0 1px 2px rgba(27, 26, 22, 0.06);
+
+  /* --- Motion ------------------------------------------------------------ */
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.45, 0, 0.2, 1);
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-slow: 280ms;
+  --transition-base: all var(--dur-base) var(--ease-out);
+
+  /* --- Spacing ----------------------------------------------------------- */
+  --space-0:  0;
+  --space-1:  2px;
+  --space-2:  4px;
+  --space-3:  8px;
+  --space-4:  12px;
+  --space-5:  16px;
+  --space-6:  20px;
+  --space-7:  24px;
+  --space-8:  32px;
+  --space-9:  40px;
+  --space-10: 48px;
+  --space-11: 64px;
+  --space-12: 80px;
+
+  --gap-inline:    var(--space-3);
+  --gap-control:   var(--space-4);
+  --gap-stack:     var(--space-5);
+  --pad-card:      var(--space-7);
+  --pad-card-lg:   var(--space-8);
+  --pad-field:     var(--space-4);
+  --section-y:     var(--space-12);
+  --gutter:        var(--space-9);
+
+  --sidebar-w:     264px;
+  --titlebar-h:    44px;
+  --content-max:   760px;
+
+  /* --- Typography -------------------------------------------------------- */
+  --font-display: "Newsreader", Georgia, "Times New Roman", serif;
+  --font-sans: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --weight-light: 300;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  --size-body: 15px;
+  --lh-body: 1.55;
+  --size-body-sm: 13.5px;
+  --lh-body-sm: 1.5;
+  --size-caption: 12px;
+  --lh-caption: 1.4;
+  --size-mono: 13px;
+  --lh-mono: 1.45;
+}
+
+/* --- Base reset ---------------------------------------------------------- */
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg-app);
+  color: var(--text-body);
+  font: var(--weight-regular) var(--size-body)/var(--lh-body) var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection { background: var(--accent-100); color: var(--accent-900); }
+
+:focus-visible { outline: none; box-shadow: var(--ring); border-radius: var(--radius-sm); }
+
+* { scrollbar-width: thin; scrollbar-color: var(--warm-300) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb { background: var(--warm-300); border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
+*::-webkit-scrollbar-thumb:hover { background: var(--warm-400); }
+
+/* --- Animations ---------------------------------------------------------- */
+@keyframes wave-bar {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(0.4); }
+}
+
+.animate-wave-bar {
+  animation: wave-bar 0.8s ease-in-out infinite;
+}
+
+@keyframes memo-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.memo-pulse {
+  animation: memo-pulse 1.6s var(--ease-in-out) infinite;
+}
