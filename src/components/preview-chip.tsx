@@ -1,9 +1,11 @@
 
 import { Meeting, statusInfo } from "@/lib/types";
+import { shortenPath } from "@/lib/files";
 import { StatusDot } from "./status-dot";
 
-export function PreviewChip({ m }: { m: Meeting }) {
+export function PreviewChip({ m, audioPath }: { m: Meeting; audioPath?: string | null }) {
   const s = statusInfo(m.status);
+  const pathPreview = audioPath ?? m.audioPath ?? null;
   return (
     <div
       role="dialog"
@@ -24,7 +26,9 @@ export function PreviewChip({ m }: { m: Meeting }) {
         <span className="font-mono text-[11px] text-[var(--text-faint)] whitespace-nowrap">{m.duration}</span>
       </div>
       <div className="text-[12.5px] leading-relaxed text-[var(--text-muted)] line-clamp-2">
-        {m.firstLine || (m.status === "transcribing" ? "Transcribing — the first line will appear shortly." : "Not transcribed yet.")}
+        {pathPreview ? (
+          <span className="font-mono text-[11px] text-[var(--text-faint)] truncate block">{shortenPath(pathPreview)}</span>
+        ) : m.firstLine || (m.status === "transcribing" ? "Transcribing — the first line will appear shortly." : "Not transcribed yet.")}
       </div>
     </div>
   );

@@ -1,8 +1,8 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Meeting } from "@/lib/types";
-import { seedMeetings } from "@/lib/data";
-import { formatTime } from "@/lib/types";
+import { deleteMeeting as deleteMeetingCommand, listMeetings, renameMeeting as renameMeetingCommand, saveMeeting, seedMeetings as seedMeetingsCommand } from "@/lib/api";
+import { seedMeetings as seedMeetingData } from "@/lib/data";
+import { Meeting, formatTime } from "@/lib/types";
 import { Home } from "./home";
 import { MeetingView } from "./meeting-view";
 import { RecordFab } from "./record-fab";
@@ -10,6 +10,19 @@ import { RecordSourcePopup } from "./record-source-popup";
 import { RecordingBar } from "./recording-bar";
 import { ImportModal, SettingsModal } from "./modals";
 import { FileText, Import, Settings } from "./icons";
+import {
+  RecordingSessionDto,
+  discardRecording as discardNativeRecording,
+  getRecordingStatus,
+  pauseRecording as pauseNativeRecording,
+  recordingSourceLabel,
+  resumeRecording as resumeNativeRecording,
+  startRecording as startNativeRecording,
+  stopRecording as stopNativeRecording,
+  toRecordingSource,
+} from "@/lib/recording";
+import { transcribeAudio } from "@/lib/transcription";
+import { resolveAudioPath, revealInFinder } from "@/lib/files";
 
 function nowClock(): string {
   const d = new Date();
@@ -20,12 +33,13 @@ function nowClock(): string {
   return `${h}:${String(m).padStart(2, "0")}${ap}`;
 }
 
-function cloneSeedMeetings(): Meeting[] {
-  return seedMeetings.map((m) => ({
-    ...m,
-    tags: m.tags.map((tag) => ({ ...tag })),
-    transcript: m.transcript ? m.transcript.map((segment) => ({ ...segment })) : null,
-  }));
+function nowDateLabel(): string {
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date());
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function DemoDataButton({ onClick }: { onClick: () => void }) {
@@ -47,18 +61,19 @@ function DemoDataButton({ onClick }: { onClick: () => void }) {
 
 export function App() {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"home" | "meeting">("home");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [recording, setRecording] = useState(false);
+  const [activeRecording, setActiveRecording] = useState<RecordingSessionDto | null>(null);
   const [recordPrompt, setRecordPrompt] = useState(false);
-  const [recordSource, setRecordSource] = useState("Microphone");
   const [overlay, setOverlay] = useState<"import" | "settings" | null>(null);
   const [toast, setToast] = useState<{ tone: string; title: string; meta?: string } | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const toastTimer = useRef<NodeJS.Timeout | null>(null);
 
   const selected = meetings.find((m) => m.id === selectedId) || null;
+  const recording = activeRecording !== null;
 
   const showToast = useCallback((t: { tone: string; title: string; meta?: string }) => {
     setToast(t);
@@ -69,47 +84,126 @@ export function App() {
   const openMeeting = (m: Meeting) => { setSelectedId(m.id); setView("meeting"); };
   const goHome = () => setView("home");
 
-  const loadDemoData = () => {
-    setMeetings(cloneSeedMeetings());
-    setSelectedId(null);
-    setQuery("");
-    setView("home");
-    showToast({ tone: "success", title: "Demo data loaded", meta: `${seedMeetings.length} meetings` });
+  const loadDemoData = async () => {
+    try {
+      const next = await seedMeetingsCommand(seedMeetingData);
+      setMeetings(next);
+      setSelectedId(null);
+      setQuery("");
+      setView("home");
+      showToast({ tone: "success", title: "Demo data loaded", meta: `${seedMeetingData.length} meetings` });
+    } catch (error) {
+      showToast({ tone: "info", title: "Could not seed SQLite", meta: String(error) });
+    }
   };
 
   const startRecording = () => { setOverlay(null); setView("home"); setRecordPrompt(true); };
-  const beginRecording = (src: string) => { setRecordSource(src); setRecordPrompt(false); setRecording(true); };
+  const beginRecording = async (src: string) => {
+    setRecordPrompt(false);
+    setView("home");
+    try {
+      const session = await startNativeRecording(toRecordingSource(src));
+      setActiveRecording(session);
+      showToast({ tone: "info", title: "Recording started", meta: src });
+    } catch (error) {
+      showToast({ tone: "info", title: "Recording failed", meta: String(error) });
+    }
+  };
   const cancelPrompt = () => setRecordPrompt(false);
 
-  const stopRecording = (elapsed: number) => {
-    setRecording(false);
-    const id = "rec" + Date.now();
-    const mb = (elapsed * 0.012 + 0.4).toFixed(1) + " MB";
-    const m: Meeting = {
-      id, title: "New recording", day: "Today", date: "Jun 5", time: nowClock(),
-      duration: formatTime(Math.max(elapsed, 1)), size: mb, status: "transcribing", source: recordSource,
-      tags: [], transcript: null, firstLine: "",
-    };
-    setMeetings((list) => [m, ...list]);
-    showToast({ tone: "info", title: "Recording saved", meta: "transcribing…" });
-    setTimeout(() => {
-      setMeetings((list) => list.map((x) => x.id === id ? {
-        ...x, status: "transcribed" as const,
-        firstLine: "Alright, recording's going — let's pick up where we left off.",
-        transcript: [
-          { t: "00:00", who: "You", text: "Alright, recording's going — let's pick up where we left off." },
-          { t: "00:09", who: "You", text: "Main thing I want to capture is the decision and the owner, so future-me isn't guessing." },
-        ],
-        notes: "",
-      } : x));
-      showToast({ tone: "success", title: "Transcript ready", meta: formatTime(Math.max(elapsed, 1)) });
-    }, 3600);
+  const runTranscription = useCallback((meeting: Meeting, filePath: string) => {
+    void transcribeAudio(meeting.id, filePath)
+      .then(async (result) => {
+        const updated: Meeting = {
+          ...meeting,
+          status: "transcribed",
+          transcript: result.segments,
+          firstLine: result.segments[0]?.text ?? meeting.firstLine ?? "",
+        };
+        const saved = await saveMeeting(updated);
+        setMeetings((list) => list.map((m) => m.id === meeting.id ? saved : m));
+        showToast({ tone: "success", title: "Transcript ready" });
+      })
+      .catch(async (error) => {
+        const updated: Meeting = { ...meeting, status: "untranscribed" };
+        try {
+          const saved = await saveMeeting(updated);
+          setMeetings((list) => list.map((m) => m.id === meeting.id ? saved : m));
+        } catch {
+          setMeetings((list) => list.map((m) => m.id === meeting.id ? updated : m));
+        }
+        showToast({ tone: "info", title: "Transcription failed", meta: String(error) });
+      });
+  }, [showToast]);
+
+  const stopRecording = async () => {
+    if (!activeRecording) return;
+    const sessionId = activeRecording.id;
+    setActiveRecording({ ...activeRecording, status: "finalizing" });
+    try {
+      const artifact = await stopNativeRecording(sessionId);
+      const m: Meeting = {
+        id: artifact.meetingId || artifact.id,
+        title: "New recording",
+        day: "Today",
+        date: nowDateLabel(),
+        time: nowClock(),
+        duration: formatTime(Math.max(artifact.durationS, 1)),
+        size: formatBytes(artifact.sizeBytes),
+        status: "transcribing",
+        source: recordingSourceLabel(artifact.source),
+        tags: [],
+        transcript: null,
+        audioPath: artifact.filePath,
+        firstLine: "",
+      };
+      setActiveRecording(null);
+      setMeetings((list) => [m, ...list]);
+      showToast({ tone: "info", title: "Recording saved", meta: "transcribing…" });
+      const saved = await saveMeeting(m);
+      setMeetings((list) => list.map((x) => x.id === m.id ? saved : x));
+      runTranscription(saved, artifact.filePath);
+    } catch (error) {
+      setActiveRecording(null);
+      showToast({ tone: "info", title: "Recording failed", meta: String(error) });
+    }
   };
 
-  const cancelRecording = () => { setRecording(false); showToast({ tone: "info", title: "Recording discarded" }); };
+  const pauseRecording = async () => {
+    if (!activeRecording) return;
+    try {
+      setActiveRecording(await pauseNativeRecording(activeRecording.id));
+    } catch (error) {
+      showToast({ tone: "info", title: "Pause failed", meta: String(error) });
+    }
+  };
+
+  const resumeRecording = async () => {
+    if (!activeRecording) return;
+    try {
+      setActiveRecording(await resumeNativeRecording(activeRecording.id));
+    } catch (error) {
+      showToast({ tone: "info", title: "Resume failed", meta: String(error) });
+    }
+  };
+
+  const cancelRecording = async () => {
+    if (!activeRecording) return;
+    try {
+      await discardNativeRecording(activeRecording.id);
+    } catch (error) {
+      showToast({ tone: "info", title: "Discard failed", meta: String(error) });
+      return;
+    }
+    setActiveRecording(null);
+    showToast({ tone: "info", title: "Recording discarded" });
+  };
 
   const deleteMeeting = () => {
     if (!selected) return;
+    void deleteMeetingCommand(selected.id).catch((error) => {
+      showToast({ tone: "info", title: "Could not delete meeting", meta: String(error) });
+    });
     setMeetings((list) => list.filter((m) => m.id !== selected.id));
     setView("home");
     showToast({ tone: "info", title: "Meeting deleted" });
@@ -119,13 +213,55 @@ export function App() {
     const t = (title || "").trim();
     if (!t) return;
     setMeetings((list) => list.map((m) => m.id === id ? { ...m, title: t } : m));
+    void renameMeetingCommand(id, t)
+      .then((updated) => {
+        setMeetings((list) => list.map((m) => m.id === id ? updated : m));
+      })
+      .catch((error) => {
+        showToast({ tone: "info", title: "Could not rename meeting", meta: String(error) });
+      });
   };
 
   const deleteMeetingById = (id: string) => {
+    void deleteMeetingCommand(id).catch((error) => {
+      showToast({ tone: "info", title: "Could not delete meeting", meta: String(error) });
+    });
     setMeetings((list) => list.filter((m) => m.id !== id));
     if (selectedId === id) setView("home");
     showToast({ tone: "info", title: "Meeting deleted" });
   };
+
+  const transcribeMeeting = useCallback((meeting: Meeting) => {
+    if (!meeting.audioPath) {
+      showToast({ tone: "info", title: "No audio file", meta: "Record audio first" });
+      return;
+    }
+    const pending: Meeting = { ...meeting, status: "transcribing", transcript: null };
+    setMeetings((list) => list.map((m) => m.id === meeting.id ? pending : m));
+    showToast({ tone: "info", title: "Transcribing…" });
+    void saveMeeting(pending)
+      .then((saved) => {
+        setMeetings((list) => list.map((m) => m.id === meeting.id ? saved : m));
+        runTranscription(saved, saved.audioPath!);
+      })
+      .catch((error) => {
+        showToast({ tone: "info", title: "Could not start transcription", meta: String(error) });
+      });
+  }, [runTranscription, showToast]);
+
+  const showInFinder = useCallback((meeting: Meeting) => {
+    void resolveAudioPath(meeting.id, meeting.audioPath)
+      .then(async (path) => {
+        if (!path) {
+          showToast({ tone: "info", title: "No audio file found" });
+          return;
+        }
+        await revealInFinder(path);
+      })
+      .catch((error) => {
+        showToast({ tone: "info", title: "Could not open Finder", meta: String(error) });
+      });
+  }, [showToast]);
 
   const runCommand = (id: string) => {
     setQuery("");
@@ -133,6 +269,31 @@ export function App() {
     else if (id === "import") setOverlay("import");
     else if (id === "settings") setOverlay("settings");
   };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadMeetings() {
+      try {
+        let next = await listMeetings();
+        if (next.length === 0) {
+          next = await seedMeetingsCommand(seedMeetingData);
+        }
+
+        if (!cancelled) setMeetings(next);
+      } catch (error) {
+        if (!cancelled) {
+          showToast({ tone: "info", title: "Could not load SQLite data", meta: String(error) });
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void loadMeetings();
+
+    return () => { cancelled = true; };
+  }, [showToast]);
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -144,6 +305,18 @@ export function App() {
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
   }, [recording, view, overlay, recordPrompt]);
+
+  useEffect(() => {
+    if (!activeRecording) return;
+
+    const id = window.setInterval(() => {
+      getRecordingStatus(activeRecording.id)
+        .then(setActiveRecording)
+        .catch(() => {});
+    }, 1000);
+
+    return () => window.clearInterval(id);
+  }, [activeRecording?.id]);
 
   const dimmed = recording || recordPrompt;
 
@@ -162,21 +335,30 @@ export function App() {
       {/* body */}
       <div className="flex-1 min-h-0 flex relative">
         {view === "home" ? (
-          <Home meetings={meetings} query={query} setQuery={setQuery} onOpen={openMeeting} onRun={runCommand} onRename={renameMeeting} onDeleteRow={deleteMeetingById} searchRef={searchRef} />
+          <Home meetings={meetings} query={query} setQuery={setQuery} onOpen={openMeeting} onRun={runCommand} onRename={renameMeeting} onDeleteRow={deleteMeetingById} onShowInFinder={showInFinder} searchRef={searchRef} />
         ) : selected ? (
-          <MeetingView m={selected} onBack={goHome} onDelete={deleteMeeting} />
+          <MeetingView m={selected} onBack={goHome} onDelete={deleteMeeting} onTranscribe={transcribeMeeting} />
         ) : (
-          <Home meetings={meetings} query={query} setQuery={setQuery} onOpen={openMeeting} onRun={runCommand} onRename={renameMeeting} onDeleteRow={deleteMeetingById} searchRef={searchRef} />
+          <Home meetings={meetings} query={query} setQuery={setQuery} onOpen={openMeeting} onRun={runCommand} onRename={renameMeeting} onDeleteRow={deleteMeetingById} onShowInFinder={showInFinder} searchRef={searchRef} />
         )}
 
-        {!recording && !overlay && view === "home" && meetings.length === 0 && <DemoDataButton onClick={loadDemoData} />}
+        {!loading && !recording && !overlay && view === "home" && meetings.length === 0 && <DemoDataButton onClick={loadDemoData} />}
         {!recording && !overlay && view === "home" && <RecordFab onClick={startRecording} />}
         {recordPrompt && !recording && <RecordSourcePopup onPick={beginRecording} onCancel={cancelPrompt} />}
         {dimmed && <div className="absolute inset-0 bg-black/20 z-30" onMouseDown={recordPrompt && !recording ? cancelPrompt : undefined} />}
       </div>
 
       {/* floating recorder */}
-      {recording && <RecordingBar onStop={stopRecording} onCancel={cancelRecording} source={recordSource} />}
+      {activeRecording && (
+        <RecordingBar
+          session={activeRecording}
+          onPause={pauseRecording}
+          onResume={resumeRecording}
+          onStop={stopRecording}
+          onCancel={cancelRecording}
+          source={recordingSourceLabel(activeRecording.source)}
+        />
+      )}
 
       {/* overlays */}
       {overlay === "import" && <ImportModal onClose={() => setOverlay(null)} />}
@@ -194,4 +376,3 @@ export function App() {
     </div>
   );
 }
-

@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/nicholastmosher/tauri/next/crates/tauri-utils/schema.json",
   "productName": "Memo",
   "version": "0.1.0",
-  "identifier": "com.memo.app",
+  "identifier": "com.memo.desktop",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -20,7 +20,11 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$APPDATA/**"]
+      }
     }
   },
   "bundle": {

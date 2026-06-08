@@ -94,3 +94,7 @@ export function Enter(p: IconProps) {
 export function ListTree(p: IconProps) {
   return <Base {...p}><path d="M21 12h-8" /><path d="M21 6H8" /><path d="M21 18h-8" /><path d="M3 6v4a2 2 0 0 0 2 2h3" /><path d="M3 12v4a2 2 0 0 0 2 2h3" /></Base>;
 }
+
+export function FolderOpen(p: IconProps) {
+  return <Base {...p}><path d="M4 20h16" /><path d="M6 20V9l3-3h5l2 2h7v12H6z" /></Base>;
+}

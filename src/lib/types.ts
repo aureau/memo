@@ -26,6 +26,7 @@ export interface Meeting {
   transcript: TranscriptSegment[] | null;
   notes?: string;
   firstLine?: string;
+  audioPath?: string;
 }
 
 export interface Command {
