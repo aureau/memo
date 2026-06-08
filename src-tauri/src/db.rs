@@ -87,6 +87,11 @@ CREATE INDEX IF NOT EXISTS idx_meetings_sort_order ON meetings(sort_order, creat
 CREATE INDEX IF NOT EXISTS idx_recordings_meeting_id ON recordings(meeting_id);
 CREATE INDEX IF NOT EXISTS idx_transcripts_meeting_id ON transcripts(meeting_id);
 "#,
+), (
+    2,
+    r#"
+ALTER TABLE meetings ADD COLUMN audio_path TEXT;
+"#,
 )];
 
 pub struct Database {
@@ -136,7 +141,8 @@ SELECT
   m.tags_json,
   t.segments_json,
   m.notes,
-  m.first_line
+  m.first_line,
+  m.audio_path
 FROM meetings m
 LEFT JOIN transcripts t ON t.meeting_id = m.id
 ORDER BY m.sort_order ASC, m.created_at DESC, m.id ASC
@@ -169,7 +175,8 @@ SELECT
   m.tags_json,
   t.segments_json,
   m.notes,
-  m.first_line
+  m.first_line,
+  m.audio_path
 FROM meetings m
 LEFT JOIN transcripts t ON t.meeting_id = m.id
 WHERE m.id = ?1
@@ -310,6 +317,7 @@ INSERT INTO meetings (
   tags_json,
   notes,
   first_line,
+  audio_path,
   sort_order,
   created_at,
   updated_at
@@ -327,6 +335,7 @@ INSERT INTO meetings (
   ?11,
   ?12,
   ?13,
+  ?14,
   CURRENT_TIMESTAMP,
   CURRENT_TIMESTAMP
 )
@@ -342,6 +351,7 @@ ON CONFLICT(id) DO UPDATE SET
   tags_json = excluded.tags_json,
   notes = excluded.notes,
   first_line = excluded.first_line,
+  audio_path = excluded.audio_path,
   sort_order = excluded.sort_order,
   updated_at = CURRENT_TIMESTAMP
 "#,
@@ -358,6 +368,7 @@ ON CONFLICT(id) DO UPDATE SET
             tags_json,
             meeting.notes,
             first_line,
+            meeting.audio_path,
             sort_order,
         ],
     )?;
@@ -442,6 +453,7 @@ fn meeting_from_row(row: &Row<'_>) -> DbResult<Meeting> {
         transcript,
         notes: row.get("notes")?,
         first_line: row.get("first_line")?,
+        audio_path: row.get("audio_path")?,
     })
 }
 

@@ -2,9 +2,10 @@
 import { useState, useRef, useEffect, useMemo, useLayoutEffect } from "react";
 import { Meeting } from "@/lib/types";
 import { GROUPS } from "@/lib/data";
+import { resolveAudioPath } from "@/lib/files";
 import { StatusDot } from "./status-dot";
 import { PreviewChip } from "./preview-chip";
-import { Search, Mic, Import, Settings, Enter, FileText, Pencil, Copy, Trash } from "./icons";
+import { Search, Mic, Import, Settings, Enter, FileText, Pencil, Copy, Trash, FolderOpen } from "./icons";
 
 interface Command {
   id: string;
@@ -28,11 +29,13 @@ interface HomeProps {
   onRun: (id: string) => void;
   onRename: (id: string, title: string) => void;
   onDeleteRow: (id: string) => void;
+  onShowInFinder?: (m: Meeting) => void;
   searchRef: React.RefObject<HTMLInputElement | null>;
 }
 
-export function Home({ meetings, query, setQuery, onOpen, onRun, onRename, onDeleteRow, searchRef }: HomeProps) {
+export function Home({ meetings, query, setQuery, onOpen, onRun, onRename, onDeleteRow, onShowInFinder, searchRef }: HomeProps) {
   const [hovered, setHovered] = useState<Meeting | null>(null);
+  const [hoveredPath, setHoveredPath] = useState<string | null>(null);
   const [active, setActive] = useState(0);
   const [menu, setMenu] = useState<{ m: Meeting; x: number; y: number } | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -53,6 +56,20 @@ export function Home({ meetings, query, setQuery, onOpen, onRun, onRename, onDel
   ], [query, meetings]);
 
   useEffect(() => { setActive(0); }, [query]);
+
+  useEffect(() => {
+    if (!hovered) {
+      setHoveredPath(null);
+      return;
+    }
+
+    let cancelled = false;
+    void resolveAudioPath(hovered.id, hovered.audioPath).then((path) => {
+      if (!cancelled) setHoveredPath(path);
+    });
+
+    return () => { cancelled = true; };
+  }, [hovered?.id, hovered?.audioPath]);
 
   const positionChip = () => {
     const el = hoverRowEl.current;
@@ -87,7 +104,7 @@ export function Home({ meetings, query, setQuery, onOpen, onRun, onRename, onDel
     if (!root) return;
     const rect = root.getBoundingClientRect();
     const scale = rect.width / root.offsetWidth || 1;
-    const MW = 176, MH = 112, pad = 10;
+    const MW = 176, MH = 148, pad = 10;
     let x = (e.clientX - rect.left) / scale;
     let y = (e.clientY - rect.top) / scale;
     x = Math.max(pad, Math.min(x, root.offsetWidth - MW - pad));
@@ -211,7 +228,7 @@ export function Home({ meetings, query, setQuery, onOpen, onRun, onRename, onDel
       {/* hover peek */}
       {hovered && !menu && (
         <div ref={chipRef} className="absolute left-0 top-0 pointer-events-none z-30">
-          <PreviewChip m={hovered} />
+          <PreviewChip m={hovered} audioPath={hoveredPath} />
         </div>
       )}
 
@@ -230,6 +247,15 @@ export function Home({ meetings, query, setQuery, onOpen, onRun, onRename, onDel
                 const m = menu.m; closeMenu();
                 const text = (m.transcript || []).map((s) => `${s.t}  ${s.who}\n${s.text}`).join("\n\n");
                 if (text && navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {});
+              }}
+            />
+            <MenuItem
+              icon={<FolderOpen />}
+              label="Show in Finder"
+              onClick={() => {
+                const m = menu.m;
+                closeMenu();
+                if (onShowInFinder) onShowInFinder(m);
               }}
             />
             <div className="my-1.5 mx-2.5 h-px bg-[var(--border-subtle)]" />

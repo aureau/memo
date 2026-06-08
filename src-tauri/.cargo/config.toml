@@ -1,0 +1,10 @@
+[env]
+# screencapturekit (macos_13_0) requires linking against macOS 13+ APIs.
+MACOSX_DEPLOYMENT_TARGET = "13.0"
+# Command Line Tools ship Swift compatibility libs here, not under Toolchains/XcodeDefault.
+LIBRARY_PATH = "/Library/Developer/CommandLineTools/usr/lib/swift/macosx"
+
+[target.aarch64-apple-darwin]
+rustflags = [
+  "-C", "link-arg=-L/Library/Developer/CommandLineTools/usr/lib/swift/macosx",
+]

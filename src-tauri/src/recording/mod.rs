@@ -457,6 +457,10 @@ fn fail_all(rx: mpsc::Receiver<WriterCommand>, error: RecordingError) {
     }
 }
 
+pub fn meeting_audio_path(app: &AppHandle, meeting_id: &str) -> std::result::Result<PathBuf, String> {
+    Ok(recording_root(app, meeting_id)?.join("audio.wav"))
+}
+
 fn recording_root(app: &AppHandle, meeting_or_session_id: &str) -> Result<PathBuf> {
     let app_data_dir = app
         .path()

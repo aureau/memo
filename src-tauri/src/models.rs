@@ -37,6 +37,8 @@ pub struct Meeting {
     pub notes: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub first_line: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_path: Option<String>,
 }
 
 impl Meeting {

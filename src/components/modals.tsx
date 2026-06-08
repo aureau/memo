@@ -1,6 +1,7 @@
 
 import { useState, useEffect, useRef, ReactNode } from "react";
 import { X, Import } from "./icons";
+import { hasGroqApiKey, setGroqApiKey } from "@/lib/transcription";
 
 function ModalShell({ title, children, onClose, footer, width = 460 }: { title: string; children: ReactNode; onClose: () => void; footer?: ReactNode; width?: number }) {
   useEffect(() => {
@@ -96,6 +97,19 @@ export function ImportModal({ onClose }: { onClose: () => void }) {
 
 export function SettingsModal({ onClose }: { onClose: () => void }) {
   const [autoTranscribe, setAutoTranscribe] = useState(true);
+  const [apiKey, setApiKey] = useState("");
+  const [keyConfigured, setKeyConfigured] = useState(false);
+
+  useEffect(() => {
+    hasGroqApiKey().then(setKeyConfigured).catch(() => setKeyConfigured(false));
+  }, []);
+
+  const saveApiKey = async () => {
+    if (!apiKey.trim()) return;
+    await setGroqApiKey(apiKey.trim());
+    setKeyConfigured(true);
+    setApiKey("");
+  };
 
   return (
     <ModalShell
@@ -126,14 +140,24 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
           }
         />
         <SettingsRow
-          label="Transcription"
-          sub="Runs on-device — no account or API key needed"
+          label="Groq API key"
+          sub={keyConfigured ? "Configured — used for Whisper transcription" : "Required for transcription (or set GROQ_API_KEY env)"}
           control={
-            <select className="px-3 py-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] text-sm text-[var(--text-strong)] min-w-[150px]">
-              <option>On-device</option>
-              <option>Groq · Whisper</option>
-              <option>Deepgram</option>
-            </select>
+            <div className="flex items-center gap-2">
+              <input
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder={keyConfigured ? "••••••••" : "gsk_..."}
+                className="px-3 py-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] text-sm text-[var(--text-strong)] min-w-[180px]"
+              />
+              <button
+                onClick={saveApiKey}
+                className="px-3 py-1.5 rounded-lg border border-[var(--border-subtle)] text-sm text-[var(--text-strong)] hover:bg-[var(--warm-100)] transition-colors"
+              >
+                Save
+              </button>
+            </div>
           }
         />
         <SettingsRow

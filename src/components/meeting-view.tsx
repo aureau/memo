@@ -1,6 +1,8 @@
 
 import { useState, useRef, useMemo, useEffect } from "react";
-import { Meeting, TranscriptSegment, durToSec, statusInfo, LONG_SEC } from "@/lib/types";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { Meeting, TranscriptSegment, durToSec, formatTime, statusInfo, LONG_SEC } from "@/lib/types";
+import { resolveAudioPath } from "@/lib/files";
 import { ChevronLeft, Calendar, Clock, Mic, Headphones, Copy, Trash, Plus, ListTree, Play, Pause, X } from "./icons";
 
 function Meta({ m }: { m: Meeting }) {
@@ -101,7 +103,18 @@ function Soundbars() {
   );
 }
 
-function Scrubber({ playing, onToggle }: { playing: boolean; onToggle: () => void }) {
+function Scrubber({
+  playing,
+  currentS,
+  durationS,
+  onToggle,
+}: {
+  playing: boolean;
+  currentS: number;
+  durationS: number;
+  onToggle: () => void;
+}) {
+  const total = Math.max(durationS, 1);
   return (
     <div className="shrink-0 pointer-events-none absolute inset-x-0 bottom-5 flex justify-center z-10">
       <div
@@ -119,19 +132,19 @@ function Scrubber({ playing, onToggle }: { playing: boolean; onToggle: () => voi
 
         {playing ? (
           <>
-            <span className="font-mono text-[12.5px] text-[var(--text-strong)] tabular-nums shrink-0">04:24</span>
+            <span className="font-mono text-[12.5px] text-[var(--text-strong)] tabular-nums shrink-0">{formatTime(currentS)}</span>
             <Soundbars />
-            <span className="font-mono text-[12.5px] text-[var(--text-faint)] shrink-0">24:31</span>
+            <span className="font-mono text-[12.5px] text-[var(--text-faint)] shrink-0">{formatTime(total)}</span>
           </>
         ) : (
-          <span className="font-mono text-[12.5px] text-[var(--text-strong)] tabular-nums pr-3">24:31</span>
+          <span className="font-mono text-[12.5px] text-[var(--text-strong)] tabular-nums pr-3">{formatTime(total)}</span>
         )}
       </div>
     </div>
   );
 }
 
-function ProcessingState({ m }: { m: Meeting }) {
+function ProcessingState({ m, onTranscribe }: { m: Meeting; onTranscribe?: () => void }) {
   const s = statusInfo(m.status);
   const transcribing = m.status === "transcribing";
   return (
@@ -141,10 +154,13 @@ function ProcessingState({ m }: { m: Meeting }) {
       <div className="text-[13.5px] leading-relaxed text-[var(--text-muted)] max-w-[320px]">
         {transcribing
           ? "Your audio is safe. The transcript will appear here automatically when it finishes."
-          : "Your audio is saved. Transcribe it whenever you're ready — it runs locally, no account needed."}
+          : "Your audio is saved. Add a Groq API key in Settings, then transcribe when you're ready."}
       </div>
-      {!transcribing && (
-        <button className="mt-1 px-4 py-2 rounded-lg bg-[var(--accent-500)] text-white text-sm font-medium hover:bg-[var(--accent-600)] transition-colors">
+      {!transcribing && onTranscribe && (
+        <button
+          onClick={onTranscribe}
+          className="mt-1 px-4 py-2 rounded-lg bg-[var(--accent-500)] text-white text-sm font-medium hover:bg-[var(--accent-600)] transition-colors"
+        >
           Transcribe now
         </button>
       )}
@@ -152,7 +168,7 @@ function ProcessingState({ m }: { m: Meeting }) {
   );
 }
 
-export function MeetingView({ m, onBack, onDelete }: { m: Meeting; onBack: () => void; onDelete: () => void }) {
+export function MeetingView({ m, onBack, onDelete, onTranscribe }: { m: Meeting; onBack: () => void; onDelete: () => void; onTranscribe?: (meeting: Meeting) => void }) {
   const segs = m.transcript || [];
   const isLong = durToSec(m.duration) > LONG_SEC;
 
@@ -166,19 +182,56 @@ export function MeetingView({ m, onBack, onDelete }: { m: Meeting; onBack: () =>
 
   const [tab, setTab] = useState<"transcript" | "notes">("transcript");
   const [playing, setPlaying] = useState(false);
+  const [currentS, setCurrentS] = useState(0);
+  const [durationS, setDurationS] = useState(durToSec(m.duration));
   const [activeSeg, setActiveSeg] = useState(0);
   const [railOpen, setRailOpen] = useState(isLong && hasChapters);
+  const [resolvedAudioPath, setResolvedAudioPath] = useState<string | null>(m.audioPath ?? null);
 
-  useEffect(() => { setTab("transcript"); setActiveSeg(0); setRailOpen(isLong && hasChapters); setPlaying(false); }, [m.id]);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioSrc = resolvedAudioPath ? convertFileSrc(resolvedAudioPath) : null;
+
+  useEffect(() => {
+    let cancelled = false;
+    void resolveAudioPath(m.id, m.audioPath).then((path) => {
+      if (!cancelled) setResolvedAudioPath(path);
+    });
+    return () => { cancelled = true; };
+  }, [m.id, m.audioPath]);
+
+  useEffect(() => {
+    setTab("transcript");
+    setActiveSeg(0);
+    setRailOpen(isLong && hasChapters);
+    setPlaying(false);
+    setCurrentS(0);
+    setDurationS(durToSec(m.duration));
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+  }, [m.id, m.duration, isLong, hasChapters]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const segRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
   const jumpTo = (i: number) => {
-    setActiveSeg(i); setPlaying(true);
+    setActiveSeg(i);
+    const seg = segs[i];
+    if (seg && audioRef.current) {
+      audioRef.current.currentTime = durToSec(seg.t);
+      void audioRef.current.play();
+    }
     const el = segRefs.current[i];
     const sc = scrollRef.current;
     if (el && sc) sc.scrollTo({ top: el.offsetTop - 16, behavior: "smooth" });
+  };
+
+  const togglePlayback = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (audio.paused) void audio.play();
+    else audio.pause();
   };
 
   const activeChapter = useMemo(() => {
@@ -191,6 +244,28 @@ export function MeetingView({ m, onBack, onDelete }: { m: Meeting; onBack: () =>
         <style>{`button[aria-label="Import audio"], button[aria-label="Settings"] { display: none; }`}</style>
       )}
       <div className="relative flex-1 min-w-0 flex flex-col bg-[var(--bg-app)]">
+        {audioSrc && (
+          <audio
+            ref={audioRef}
+            src={audioSrc}
+            preload="metadata"
+            onLoadedMetadata={(e) => setDurationS(Math.floor(e.currentTarget.duration) || durToSec(m.duration))}
+            onTimeUpdate={(e) => {
+              const t = Math.floor(e.currentTarget.currentTime);
+              setCurrentS(t);
+              const idx = segs.findIndex((seg, i) => {
+                const next = segs[i + 1];
+                const start = durToSec(seg.t);
+                const end = next ? durToSec(next.t) : Number.MAX_SAFE_INTEGER;
+                return t >= start && t < end;
+              });
+              if (idx >= 0) setActiveSeg(idx);
+            }}
+            onPlay={() => setPlaying(true)}
+            onPause={() => setPlaying(false)}
+            onEnded={() => setPlaying(false)}
+          />
+        )}
         {/* header */}
         <div className="px-[30px] pt-4 shrink-0">
           <button onClick={onBack} className="inline-flex items-center gap-1 text-sm text-[var(--text-muted)] hover:text-[var(--text-strong)] transition-colors">
@@ -255,7 +330,7 @@ export function MeetingView({ m, onBack, onDelete }: { m: Meeting; onBack: () =>
                   <Segment key={i} s={s} active={i === activeSeg} onJump={() => jumpTo(i)} refCb={(el) => { segRefs.current[i] = el; }} />
                 ))
               ) : (
-                <ProcessingState m={m} />
+                <ProcessingState m={m} onTranscribe={onTranscribe ? () => onTranscribe(m) : undefined} />
               )
             ) : (
               <div className="pt-3.5 px-3.5">
@@ -267,7 +342,9 @@ export function MeetingView({ m, onBack, onDelete }: { m: Meeting; onBack: () =>
           </div>
         </div>
 
-        {tab === "transcript" && segs.length > 0 && <Scrubber playing={playing} onToggle={() => setPlaying((p) => !p)} />}
+        {tab === "transcript" && segs.length > 0 && audioSrc && (
+          <Scrubber playing={playing} currentS={currentS} durationS={durationS} onToggle={togglePlayback} />
+        )}
       </div>
 
       {tab === "transcript" && hasChapters && railOpen && (

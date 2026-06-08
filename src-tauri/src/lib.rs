@@ -2,6 +2,7 @@ pub mod commands;
 pub mod db;
 pub mod models;
 pub mod recording;
+pub mod transcription;
 
 use recording::RecordingManager;
 use tauri::Manager;
@@ -26,12 +27,17 @@ pub fn run() {
             commands::save_meeting,
             commands::rename_meeting,
             commands::delete_meeting,
+            commands::resolve_audio_path,
+            commands::reveal_in_finder,
             recording::start_recording,
             recording::pause_recording,
             recording::resume_recording,
             recording::stop_recording,
             recording::discard_recording,
             recording::get_recording_status,
+            transcription::transcribe_audio,
+            transcription::set_groq_api_key,
+            transcription::has_groq_api_key,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -34,6 +34,7 @@ fn sample_meeting(id: &str, title: &str) -> Meeting {
         ]),
         notes: Some("short test note".to_string()),
         first_line: None,
+        audio_path: None,
     }
 }
 
