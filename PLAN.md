@@ -177,7 +177,7 @@ Work below is backend-first — get the engine running, then plug the UI on top.
 |---|------|-----------------|--------|
 | 1 | Scaffold Tauri 2 + React + Tailwind project | Everything | ~1 hr |
 | 2 | Port JSX mockups into the Tauri frontend (React components, routing, design system) | Having a visible app to wire commands into | ~2-3 hrs |
-| 3 | SQLite setup — create DB, run migrations, CRUD commands | Storage for all features | ~1-2 hrs |
+| 3 | SQLite setup — create DB, run migrations, CRUD commands (done) | Storage for all features | ~1-2 hrs |
 
 **Phase 1 output**: App launches, shows the home screen with seed data from SQLite.
 

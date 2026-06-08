@@ -1,8 +1,8 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Meeting } from "@/lib/types";
-import { seedMeetings } from "@/lib/data";
-import { formatTime } from "@/lib/types";
+import { deleteMeeting as deleteMeetingCommand, listMeetings, renameMeeting as renameMeetingCommand, saveMeeting, seedMeetings as seedMeetingsCommand } from "@/lib/api";
+import { seedMeetings as seedMeetingData } from "@/lib/data";
+import { Meeting, formatTime } from "@/lib/types";
 import { Home } from "./home";
 import { MeetingView } from "./meeting-view";
 import { RecordFab } from "./record-fab";
@@ -18,14 +18,6 @@ function nowClock(): string {
   const ap = h >= 12 ? "p" : "a";
   h = h % 12 || 12;
   return `${h}:${String(m).padStart(2, "0")}${ap}`;
-}
-
-function cloneSeedMeetings(): Meeting[] {
-  return seedMeetings.map((m) => ({
-    ...m,
-    tags: m.tags.map((tag) => ({ ...tag })),
-    transcript: m.transcript ? m.transcript.map((segment) => ({ ...segment })) : null,
-  }));
 }
 
 function DemoDataButton({ onClick }: { onClick: () => void }) {
@@ -47,6 +39,7 @@ function DemoDataButton({ onClick }: { onClick: () => void }) {
 
 export function App() {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"home" | "meeting">("home");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -69,12 +62,17 @@ export function App() {
   const openMeeting = (m: Meeting) => { setSelectedId(m.id); setView("meeting"); };
   const goHome = () => setView("home");
 
-  const loadDemoData = () => {
-    setMeetings(cloneSeedMeetings());
-    setSelectedId(null);
-    setQuery("");
-    setView("home");
-    showToast({ tone: "success", title: "Demo data loaded", meta: `${seedMeetings.length} meetings` });
+  const loadDemoData = async () => {
+    try {
+      const next = await seedMeetingsCommand(seedMeetingData);
+      setMeetings(next);
+      setSelectedId(null);
+      setQuery("");
+      setView("home");
+      showToast({ tone: "success", title: "Demo data loaded", meta: `${seedMeetingData.length} meetings` });
+    } catch (error) {
+      showToast({ tone: "info", title: "Could not seed SQLite", meta: String(error) });
+    }
   };
 
   const startRecording = () => { setOverlay(null); setView("home"); setRecordPrompt(true); };
@@ -92,17 +90,29 @@ export function App() {
     };
     setMeetings((list) => [m, ...list]);
     showToast({ tone: "info", title: "Recording saved", meta: "transcribing…" });
+    void saveMeeting(m).catch((error) => {
+      showToast({ tone: "info", title: "Could not save recording", meta: String(error) });
+    });
     setTimeout(() => {
-      setMeetings((list) => list.map((x) => x.id === id ? {
-        ...x, status: "transcribed" as const,
+      const ready: Meeting = {
+        ...m,
+        status: "transcribed" as const,
         firstLine: "Alright, recording's going — let's pick up where we left off.",
         transcript: [
           { t: "00:00", who: "You", text: "Alright, recording's going — let's pick up where we left off." },
           { t: "00:09", who: "You", text: "Main thing I want to capture is the decision and the owner, so future-me isn't guessing." },
         ],
         notes: "",
-      } : x));
-      showToast({ tone: "success", title: "Transcript ready", meta: formatTime(Math.max(elapsed, 1)) });
+      };
+      setMeetings((list) => list.map((x) => x.id === id ? ready : x));
+      void saveMeeting(ready)
+        .then((saved) => {
+          setMeetings((list) => list.map((x) => x.id === id ? saved : x));
+          showToast({ tone: "success", title: "Transcript ready", meta: formatTime(Math.max(elapsed, 1)) });
+        })
+        .catch((error) => {
+          showToast({ tone: "info", title: "Could not save transcript", meta: String(error) });
+        });
     }, 3600);
   };
 
@@ -110,6 +120,9 @@ export function App() {
 
   const deleteMeeting = () => {
     if (!selected) return;
+    void deleteMeetingCommand(selected.id).catch((error) => {
+      showToast({ tone: "info", title: "Could not delete meeting", meta: String(error) });
+    });
     setMeetings((list) => list.filter((m) => m.id !== selected.id));
     setView("home");
     showToast({ tone: "info", title: "Meeting deleted" });
@@ -119,9 +132,19 @@ export function App() {
     const t = (title || "").trim();
     if (!t) return;
     setMeetings((list) => list.map((m) => m.id === id ? { ...m, title: t } : m));
+    void renameMeetingCommand(id, t)
+      .then((updated) => {
+        setMeetings((list) => list.map((m) => m.id === id ? updated : m));
+      })
+      .catch((error) => {
+        showToast({ tone: "info", title: "Could not rename meeting", meta: String(error) });
+      });
   };
 
   const deleteMeetingById = (id: string) => {
+    void deleteMeetingCommand(id).catch((error) => {
+      showToast({ tone: "info", title: "Could not delete meeting", meta: String(error) });
+    });
     setMeetings((list) => list.filter((m) => m.id !== id));
     if (selectedId === id) setView("home");
     showToast({ tone: "info", title: "Meeting deleted" });
@@ -133,6 +156,31 @@ export function App() {
     else if (id === "import") setOverlay("import");
     else if (id === "settings") setOverlay("settings");
   };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadMeetings() {
+      try {
+        let next = await listMeetings();
+        if (next.length === 0) {
+          next = await seedMeetingsCommand(seedMeetingData);
+        }
+
+        if (!cancelled) setMeetings(next);
+      } catch (error) {
+        if (!cancelled) {
+          showToast({ tone: "info", title: "Could not load SQLite data", meta: String(error) });
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void loadMeetings();
+
+    return () => { cancelled = true; };
+  }, [showToast]);
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -169,7 +217,7 @@ export function App() {
           <Home meetings={meetings} query={query} setQuery={setQuery} onOpen={openMeeting} onRun={runCommand} onRename={renameMeeting} onDeleteRow={deleteMeetingById} searchRef={searchRef} />
         )}
 
-        {!recording && !overlay && view === "home" && meetings.length === 0 && <DemoDataButton onClick={loadDemoData} />}
+        {!loading && !recording && !overlay && view === "home" && meetings.length === 0 && <DemoDataButton onClick={loadDemoData} />}
         {!recording && !overlay && view === "home" && <RecordFab onClick={startRecording} />}
         {recordPrompt && !recording && <RecordSourcePopup onPick={beginRecording} onCancel={cancelPrompt} />}
         {dimmed && <div className="absolute inset-0 bg-black/20 z-30" onMouseDown={recordPrompt && !recording ? cancelPrompt : undefined} />}
