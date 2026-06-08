@@ -27,7 +27,7 @@ export function PreviewChip({ m, audioPath }: { m: Meeting; audioPath?: string |
       </div>
       <div className="text-[12.5px] leading-relaxed text-[var(--text-muted)] line-clamp-2">
         {pathPreview ? (
-          <span className="font-mono text-[11px] text-[var(--text-faint)] break-all">{shortenPath(pathPreview)}</span>
+          <span className="font-mono text-[11px] text-[var(--text-faint)] truncate block">{shortenPath(pathPreview)}</span>
         ) : m.firstLine || (m.status === "transcribing" ? "Transcribing — the first line will appear shortly." : "Not transcribed yet.")}
       </div>
     </div>

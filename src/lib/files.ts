@@ -14,13 +14,21 @@ export async function revealInFinder(path: string): Promise<void> {
   return invoke("reveal_in_finder", { path });
 }
 
-export function shortenPath(path: string, max = 52): string {
-  if (path.length <= max) return path;
+export function shortenPath(path: string): string {
+  const marker = "/recordings/rec_";
+  const idx = path.indexOf(marker);
+  if (idx !== -1) {
+    const idStart = path.slice(idx + marker.length);
+    const hash = idStart.slice(0, 5);
+    return `…/recordings/rec_${hash}…`;
+  }
+
   const parts = path.split("/");
+  const dir = parts[parts.length - 2] ?? "";
+  if (dir.startsWith("rec_") && dir.length > 9) {
+    return `…/recordings/${dir.slice(0, 9)}…`;
+  }
+
   const file = parts.pop() ?? path;
-  const tail = parts.slice(-2).join("/");
-  const prefix = tail ? `…/${tail}/` : "…/";
-  const budget = Math.max(max - prefix.length, 8);
-  if (file.length <= budget) return `${prefix}${file}`;
-  return `${prefix}${file.slice(0, budget - 1)}…`;
+  return file.length > 24 ? `${file.slice(0, 23)}…` : file;
 }
