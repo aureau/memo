@@ -10,6 +10,17 @@ import { RecordSourcePopup } from "./record-source-popup";
 import { RecordingBar } from "./recording-bar";
 import { ImportModal, SettingsModal } from "./modals";
 import { FileText, Import, Settings } from "./icons";
+import {
+  RecordingSessionDto,
+  discardRecording as discardNativeRecording,
+  getRecordingStatus,
+  pauseRecording as pauseNativeRecording,
+  recordingSourceLabel,
+  resumeRecording as resumeNativeRecording,
+  startRecording as startNativeRecording,
+  stopRecording as stopNativeRecording,
+  toRecordingSource,
+} from "@/lib/recording";
 
 function nowClock(): string {
   const d = new Date();
@@ -18,6 +29,15 @@ function nowClock(): string {
   const ap = h >= 12 ? "p" : "a";
   h = h % 12 || 12;
   return `${h}:${String(m).padStart(2, "0")}${ap}`;
+}
+
+function nowDateLabel(): string {
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date());
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function cloneSeedMeetings(): Meeting[] {
@@ -50,15 +70,15 @@ export function App() {
   const [view, setView] = useState<"home" | "meeting">("home");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [recording, setRecording] = useState(false);
+  const [activeRecording, setActiveRecording] = useState<RecordingSessionDto | null>(null);
   const [recordPrompt, setRecordPrompt] = useState(false);
-  const [recordSource, setRecordSource] = useState("Microphone");
   const [overlay, setOverlay] = useState<"import" | "settings" | null>(null);
   const [toast, setToast] = useState<{ tone: string; title: string; meta?: string } | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const toastTimer = useRef<NodeJS.Timeout | null>(null);
 
   const selected = meetings.find((m) => m.id === selectedId) || null;
+  const recording = activeRecording !== null;
 
   const showToast = useCallback((t: { tone: string; title: string; meta?: string }) => {
     setToast(t);
@@ -78,35 +98,77 @@ export function App() {
   };
 
   const startRecording = () => { setOverlay(null); setView("home"); setRecordPrompt(true); };
-  const beginRecording = (src: string) => { setRecordSource(src); setRecordPrompt(false); setRecording(true); };
+  const beginRecording = async (src: string) => {
+    setRecordPrompt(false);
+    setView("home");
+    try {
+      const session = await startNativeRecording(toRecordingSource(src));
+      setActiveRecording(session);
+      showToast({ tone: "info", title: "Recording started", meta: src });
+    } catch (error) {
+      showToast({ tone: "info", title: "Recording failed", meta: String(error) });
+    }
+  };
   const cancelPrompt = () => setRecordPrompt(false);
 
-  const stopRecording = (elapsed: number) => {
-    setRecording(false);
-    const id = "rec" + Date.now();
-    const mb = (elapsed * 0.012 + 0.4).toFixed(1) + " MB";
-    const m: Meeting = {
-      id, title: "New recording", day: "Today", date: "Jun 5", time: nowClock(),
-      duration: formatTime(Math.max(elapsed, 1)), size: mb, status: "transcribing", source: recordSource,
-      tags: [], transcript: null, firstLine: "",
-    };
-    setMeetings((list) => [m, ...list]);
-    showToast({ tone: "info", title: "Recording saved", meta: "transcribing…" });
-    setTimeout(() => {
-      setMeetings((list) => list.map((x) => x.id === id ? {
-        ...x, status: "transcribed" as const,
-        firstLine: "Alright, recording's going — let's pick up where we left off.",
-        transcript: [
-          { t: "00:00", who: "You", text: "Alright, recording's going — let's pick up where we left off." },
-          { t: "00:09", who: "You", text: "Main thing I want to capture is the decision and the owner, so future-me isn't guessing." },
-        ],
-        notes: "",
-      } : x));
-      showToast({ tone: "success", title: "Transcript ready", meta: formatTime(Math.max(elapsed, 1)) });
-    }, 3600);
+  const stopRecording = async () => {
+    if (!activeRecording) return;
+    const sessionId = activeRecording.id;
+    setActiveRecording({ ...activeRecording, status: "finalizing" });
+    try {
+      const artifact = await stopNativeRecording(sessionId);
+      const m: Meeting = {
+        id: artifact.meetingId || artifact.id,
+        title: "New recording",
+        day: "Today",
+        date: nowDateLabel(),
+        time: nowClock(),
+        duration: formatTime(Math.max(artifact.durationS, 1)),
+        size: formatBytes(artifact.sizeBytes),
+        status: "untranscribed",
+        source: recordingSourceLabel(artifact.source),
+        tags: [],
+        transcript: null,
+        firstLine: `Audio saved: ${artifact.filePath}`,
+      };
+      setActiveRecording(null);
+      setMeetings((list) => [m, ...list]);
+      showToast({ tone: "success", title: "Recording saved", meta: formatBytes(artifact.sizeBytes) });
+    } catch (error) {
+      setActiveRecording(null);
+      showToast({ tone: "info", title: "Recording failed", meta: String(error) });
+    }
   };
 
-  const cancelRecording = () => { setRecording(false); showToast({ tone: "info", title: "Recording discarded" }); };
+  const pauseRecording = async () => {
+    if (!activeRecording) return;
+    try {
+      setActiveRecording(await pauseNativeRecording(activeRecording.id));
+    } catch (error) {
+      showToast({ tone: "info", title: "Pause failed", meta: String(error) });
+    }
+  };
+
+  const resumeRecording = async () => {
+    if (!activeRecording) return;
+    try {
+      setActiveRecording(await resumeNativeRecording(activeRecording.id));
+    } catch (error) {
+      showToast({ tone: "info", title: "Resume failed", meta: String(error) });
+    }
+  };
+
+  const cancelRecording = async () => {
+    if (!activeRecording) return;
+    try {
+      await discardNativeRecording(activeRecording.id);
+    } catch (error) {
+      showToast({ tone: "info", title: "Discard failed", meta: String(error) });
+      return;
+    }
+    setActiveRecording(null);
+    showToast({ tone: "info", title: "Recording discarded" });
+  };
 
   const deleteMeeting = () => {
     if (!selected) return;
@@ -145,6 +207,18 @@ export function App() {
     return () => window.removeEventListener("keydown", h);
   }, [recording, view, overlay, recordPrompt]);
 
+  useEffect(() => {
+    if (!activeRecording) return;
+
+    const id = window.setInterval(() => {
+      getRecordingStatus(activeRecording.id)
+        .then(setActiveRecording)
+        .catch(() => {});
+    }, 1000);
+
+    return () => window.clearInterval(id);
+  }, [activeRecording?.id]);
+
   const dimmed = recording || recordPrompt;
 
   return (
@@ -176,7 +250,16 @@ export function App() {
       </div>
 
       {/* floating recorder */}
-      {recording && <RecordingBar onStop={stopRecording} onCancel={cancelRecording} source={recordSource} />}
+      {activeRecording && (
+        <RecordingBar
+          session={activeRecording}
+          onPause={pauseRecording}
+          onResume={resumeRecording}
+          onStop={stopRecording}
+          onCancel={cancelRecording}
+          source={recordingSourceLabel(activeRecording.source)}
+        />
+      )}
 
       {/* overlays */}
       {overlay === "import" && <ImportModal onClose={() => setOverlay(null)} />}
