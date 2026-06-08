@@ -1,7 +1,9 @@
 pub mod commands;
 pub mod db;
 pub mod models;
+pub mod recording;
 
+use recording::RecordingManager;
 use tauri::Manager;
 
 pub fn run() {
@@ -13,6 +15,7 @@ pub fn run() {
             let db_path = app_data_dir.join("memo.sqlite3");
             let database = db::Database::open(db_path)?;
             app.manage(database);
+            app.manage(RecordingManager::default());
 
             Ok(())
         })
@@ -23,6 +26,12 @@ pub fn run() {
             commands::save_meeting,
             commands::rename_meeting,
             commands::delete_meeting,
+            recording::start_recording,
+            recording::pause_recording,
+            recording::resume_recording,
+            recording::stop_recording,
+            recording::discard_recording,
+            recording::get_recording_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
