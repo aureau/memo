@@ -1,8 +1,7 @@
 
 import { useState, useRef, useEffect, useMemo, useLayoutEffect } from "react";
 import { Meeting } from "@/lib/types";
-import { GROUPS, seedMeetings } from "@/lib/data";
-import { statusInfo } from "@/lib/types";
+import { GROUPS } from "@/lib/data";
 import { StatusDot } from "./status-dot";
 import { PreviewChip } from "./preview-chip";
 import { Search, Mic, Import, Settings, Enter, FileText, Pencil, Copy, Trash } from "./icons";
@@ -116,7 +115,8 @@ export function Home({ meetings, query, setQuery, onOpen, onRun, onRename, onDel
 
   let idx = -1;
   const next = () => ++idx;
-  const empty = filtered.length === 0 && cmds.length === 0;
+  const emptyLibrary = meetings.length === 0 && !q;
+  const empty = !emptyLibrary && filtered.length === 0 && cmds.length === 0;
 
   return (
     <div ref={rootRef} className="flex-1 min-w-0 flex flex-col relative bg-[var(--bg-app)]">
@@ -157,7 +157,7 @@ export function Home({ meetings, query, setQuery, onOpen, onRun, onRename, onDel
 
           {!empty && filtered.length > 0 && (
             <>
-              {!q && <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-faint)] mb-1.5 px-1">Recent</div>}
+              {/* {!q && <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-faint)] mb-1.5 px-1">Recent</div>} */}
               {GROUPS.map((g) => {
                 const rows = filtered.filter((m) => m.day === g);
                 if (!rows.length) return null;
@@ -187,6 +187,16 @@ export function Home({ meetings, query, setQuery, onOpen, onRun, onRename, onDel
                 );
               })}
             </>
+          )}
+
+          {emptyLibrary && (
+            <div className="pt-[70px] text-center text-[var(--text-faint)]">
+              <div className="w-[30px] h-[30px] mx-auto mb-3 text-[var(--warm-400)]"><FileText /></div>
+              <div className="text-sm text-[var(--text-muted)]">No meetings yet.</div>
+              <div className="mt-1 text-[13px] leading-relaxed text-[var(--text-faint)]">
+                Record something new or load demo data to explore transcripts, notes, and chapters.
+              </div>
+            </div>
           )}
 
           {empty && (

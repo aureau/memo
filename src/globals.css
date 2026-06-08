@@ -189,6 +189,24 @@ body {
   animation: wave-bar 0.8s ease-in-out infinite;
 }
 
+@keyframes memo-soundbar {
+  from { transform: scaleY(0.3); }
+  to { transform: scaleY(1); }
+}
+
+.memo-soundbar {
+  fill: currentColor;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: memo-soundbar 0.62s ease-in-out infinite alternate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .memo-soundbar {
+    animation: none;
+  }
+}
+
 @keyframes memo-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }

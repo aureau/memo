@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "tauri dev",
+    "dev": "node scripts/tauri-dev.mjs",
     "build": "tauri build",
     "vite:dev": "vite",
     "vite:build": "vite build",

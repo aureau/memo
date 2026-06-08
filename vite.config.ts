@@ -1,6 +1,9 @@
 import { defineConfig } from "vite";
 import path from "path";
 
+const defaultDevPort = 1420;
+const devPort = Number(process.env.PORT ?? process.env.VITE_PORT ?? defaultDevPort);
+
 export default defineConfig({
   resolve: {
     alias: {
@@ -11,7 +14,7 @@ export default defineConfig({
     postcss: "./postcss.config.mjs",
   },
   server: {
-    port: 1420,
+    port: devPort,
     strictPort: true,
   },
   build: {

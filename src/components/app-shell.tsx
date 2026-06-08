@@ -9,7 +9,7 @@ import { RecordFab } from "./record-fab";
 import { RecordSourcePopup } from "./record-source-popup";
 import { RecordingBar } from "./recording-bar";
 import { ImportModal, SettingsModal } from "./modals";
-import { Import, Settings } from "./icons";
+import { FileText, Import, Settings } from "./icons";
 
 function nowClock(): string {
   const d = new Date();
@@ -20,8 +20,33 @@ function nowClock(): string {
   return `${h}:${String(m).padStart(2, "0")}${ap}`;
 }
 
+function cloneSeedMeetings(): Meeting[] {
+  return seedMeetings.map((m) => ({
+    ...m,
+    tags: m.tags.map((tag) => ({ ...tag })),
+    transcript: m.transcript ? m.transcript.map((segment) => ({ ...segment })) : null,
+  }));
+}
+
+function DemoDataButton({ onClick }: { onClick: () => void }) {
+  return (
+    <div className="absolute left-6 bottom-6 z-40">
+      <button
+        onClick={onClick}
+        aria-label="Load demo data"
+        className="h-11 px-4 rounded-full bg-[var(--surface-card)] border border-[var(--border-subtle)] text-[var(--text-muted)] shadow-sm hover:bg-[var(--warm-100)] hover:text-[var(--text-strong)] flex items-center gap-2 transition-colors"
+      >
+        <span className="w-[16px] h-[16px] inline-flex">
+          <FileText />
+        </span>
+        <span className="text-sm font-medium">Load demo data</span>
+      </button>
+    </div>
+  );
+}
+
 export function App() {
-  const [meetings, setMeetings] = useState<Meeting[]>(seedMeetings);
+  const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [view, setView] = useState<"home" | "meeting">("home");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -43,6 +68,14 @@ export function App() {
 
   const openMeeting = (m: Meeting) => { setSelectedId(m.id); setView("meeting"); };
   const goHome = () => setView("home");
+
+  const loadDemoData = () => {
+    setMeetings(cloneSeedMeetings());
+    setSelectedId(null);
+    setQuery("");
+    setView("home");
+    showToast({ tone: "success", title: "Demo data loaded", meta: `${seedMeetings.length} meetings` });
+  };
 
   const startRecording = () => { setOverlay(null); setView("home"); setRecordPrompt(true); };
   const beginRecording = (src: string) => { setRecordSource(src); setRecordPrompt(false); setRecording(true); };
@@ -136,6 +169,7 @@ export function App() {
           <Home meetings={meetings} query={query} setQuery={setQuery} onOpen={openMeeting} onRun={runCommand} onRename={renameMeeting} onDeleteRow={deleteMeetingById} searchRef={searchRef} />
         )}
 
+        {!recording && !overlay && view === "home" && meetings.length === 0 && <DemoDataButton onClick={loadDemoData} />}
         {!recording && !overlay && view === "home" && <RecordFab onClick={startRecording} />}
         {recordPrompt && !recording && <RecordSourcePopup onPick={beginRecording} onCancel={cancelPrompt} />}
         {dimmed && <div className="absolute inset-0 bg-black/20 z-30" onMouseDown={recordPrompt && !recording ? cancelPrompt : undefined} />}

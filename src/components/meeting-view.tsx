@@ -1,7 +1,6 @@
 
 import { useState, useRef, useMemo, useEffect } from "react";
 import { Meeting, TranscriptSegment, durToSec, statusInfo, LONG_SEC } from "@/lib/types";
-import { Waveform } from "./waveform";
 import { ChevronLeft, Calendar, Clock, Mic, Headphones, Copy, Trash, Plus, ListTree, Play, Pause, X } from "./icons";
 
 function Meta({ m }: { m: Meeting }) {
@@ -73,12 +72,41 @@ function ChapterRail({ chapters, activeIdx, onJump, onClose, auto }: { chapters:
   );
 }
 
-function Scrubber({ playing, onToggle, pos }: { playing: boolean; onToggle: () => void; pos: number }) {
+function Soundbars() {
+  const bars = [
+    { x: 3, y: 10, height: 6, delay: "0ms" },
+    { x: 7, y: 9, height: 8, delay: "-160ms" },
+    { x: 11, y: 10, height: 6, delay: "-320ms" },
+    { x: 15, y: 8, height: 10, delay: "-480ms" },
+    { x: 19, y: 9, height: 8, delay: "-640ms" },
+  ];
+
+  return (
+    <span className="w-12 h-10 inline-flex items-center justify-center text-[var(--accent-500)] shrink-0" aria-hidden="true">
+      <svg width="32" height="40" viewBox="0 0 24 24" fill="none">
+        {bars.map((bar) => (
+          <rect
+            key={bar.x}
+            x={bar.x}
+            y={bar.y}
+            width="2"
+            height={bar.height}
+            rx="1"
+            className="memo-soundbar"
+            style={{ animationDelay: bar.delay }}
+          />
+        ))}
+      </svg>
+    </span>
+  );
+}
+
+function Scrubber({ playing, onToggle }: { playing: boolean; onToggle: () => void }) {
   return (
     <div className="shrink-0 pointer-events-none absolute inset-x-0 bottom-5 flex justify-center z-10">
       <div
         className={`pointer-events-auto flex items-center bg-[var(--warm-50)]/95 backdrop-blur-sm border border-[var(--border-subtle)] rounded-full shadow-[0_8px_24px_-8px_rgba(27,26,22,0.18)] transition-[width,padding,gap] duration-300 ease-out ${
-          playing ? "gap-3 pl-1.5 pr-4 py-1.5 w-[min(640px,calc(100%-40px))]" : "gap-2.5 px-1.5 py-1.5"
+          playing ? "gap-2 pl-1.5 pr-2.5 py-1.5 w-[min(210px,calc(100%-40px))]" : "gap-2.5 px-1.5 py-1.5"
         }`}
       >
         <button
@@ -92,13 +120,7 @@ function Scrubber({ playing, onToggle, pos }: { playing: boolean; onToggle: () =
         {playing ? (
           <>
             <span className="font-mono text-[12.5px] text-[var(--text-strong)] tabular-nums shrink-0">04:24</span>
-            <div className="flex-1 min-w-0 relative h-[26px]">
-              <Waveform n={64} height={26} color="var(--warm-300)" seed={3} />
-              <div className="absolute inset-0 overflow-hidden" style={{ width: `${pos * 100}%` }}>
-                <div style={{ width: `${100 / pos}%` }}><Waveform n={64} height={26} color="var(--accent-500)" seed={3} /></div>
-              </div>
-              <div className="absolute top-0 bottom-0 w-0.5 rounded bg-[var(--accent-700)]" style={{ left: `${pos * 100}%`, marginLeft: -1 }} />
-            </div>
+            <Soundbars />
             <span className="font-mono text-[12.5px] text-[var(--text-faint)] shrink-0">24:31</span>
           </>
         ) : (
@@ -163,10 +185,11 @@ export function MeetingView({ m, onBack, onDelete }: { m: Meeting; onBack: () =>
     let a = 0; chapters.forEach((c, i) => { if (c.segIdx <= activeSeg) a = i; }); return a;
   }, [activeSeg, chapters]);
 
-  const pos = segs.length ? Math.min(0.98, (activeSeg + 0.5) / segs.length) : 0.04;
-
   return (
     <div className="flex-1 min-w-0 flex min-h-0">
+      {hasChapters && railOpen && (
+        <style>{`button[aria-label="Import audio"], button[aria-label="Settings"] { display: none; }`}</style>
+      )}
       <div className="relative flex-1 min-w-0 flex flex-col bg-[var(--bg-app)]">
         {/* header */}
         <div className="px-[30px] pt-4 shrink-0">
@@ -244,7 +267,7 @@ export function MeetingView({ m, onBack, onDelete }: { m: Meeting; onBack: () =>
           </div>
         </div>
 
-        {tab === "transcript" && segs.length > 0 && <Scrubber playing={playing} onToggle={() => setPlaying((p) => !p)} pos={pos} />}
+        {tab === "transcript" && segs.length > 0 && <Scrubber playing={playing} onToggle={() => setPlaying((p) => !p)} />}
       </div>
 
       {tab === "transcript" && hasChapters && railOpen && (
