@@ -31,9 +31,12 @@ interface HomeProps {
   onDeleteRow: (id: string) => void;
   onShowInFinder?: (m: Meeting) => void;
   searchRef: React.RefObject<HTMLInputElement | null>;
+  demoVisible?: boolean;
+  onLoadDemo?: () => void;
+  onHideDemo?: () => void;
 }
 
-export function Home({ meetings, query, setQuery, onOpen, onRun, onRename, onDeleteRow, onShowInFinder, searchRef }: HomeProps) {
+export function Home({ meetings, query, setQuery, onOpen, onRun, onRename, onDeleteRow, onShowInFinder, searchRef, demoVisible, onLoadDemo, onHideDemo }: HomeProps) {
   const [hovered, setHovered] = useState<Meeting | null>(null);
   const [hoveredPath, setHoveredPath] = useState<string | null>(null);
   const [active, setActive] = useState(0);
@@ -229,6 +232,36 @@ export function Home({ meetings, query, setQuery, onOpen, onRun, onRename, onDel
       {hovered && !menu && (
         <div ref={chipRef} className="absolute left-0 top-0 pointer-events-none z-30">
           <PreviewChip m={hovered} audioPath={hoveredPath} />
+        </div>
+      )}
+
+      {/* demo data controls */}
+      {demoVisible && onHideDemo && (
+        <div className="absolute left-6 bottom-6 z-40">
+          <button
+            onClick={onHideDemo}
+            aria-label="Hide demo data"
+            className="h-11 px-4 rounded-full bg-[var(--surface-card)] border border-[var(--border-subtle)] text-[var(--text-muted)] shadow-sm hover:bg-[var(--warm-100)] hover:text-[var(--text-strong)] flex items-center gap-2 transition-colors"
+          >
+            <span className="w-[16px] h-[16px] inline-flex">
+              <FileText />
+            </span>
+            <span className="text-sm font-medium">Hide demo data</span>
+          </button>
+        </div>
+      )}
+      {!demoVisible && onLoadDemo && ( /*add && meetings.length === 0 when done debugging*/
+        <div className="absolute left-6 bottom-6 z-40">
+          <button
+            onClick={onLoadDemo}
+            aria-label="Load demo data"
+            className="h-11 px-4 rounded-full bg-[var(--surface-card)] border border-[var(--border-subtle)] text-[var(--text-muted)] shadow-sm hover:bg-[var(--warm-100)] hover:text-[var(--text-strong)] flex items-center gap-2 transition-colors"
+          >
+            <span className="w-[16px] h-[16px] inline-flex">
+              <FileText />
+            </span>
+            <span className="text-sm font-medium">Load demo data</span>
+          </button>
         </div>
       )}
 

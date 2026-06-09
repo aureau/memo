@@ -9,7 +9,7 @@ import { RecordFab } from "./record-fab";
 import { RecordSourcePopup } from "./record-source-popup";
 import { RecordingBar } from "./recording-bar";
 import { ImportModal, SettingsModal } from "./modals";
-import { FileText, Import, Settings } from "./icons";
+import { Import, Settings } from "./icons";
 import {
   RecordingSessionDto,
   discardRecording as discardNativeRecording,
@@ -42,22 +42,7 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function DemoDataButton({ onClick }: { onClick: () => void }) {
-  return (
-    <div className="absolute left-6 bottom-6 z-40">
-      <button
-        onClick={onClick}
-        aria-label="Load demo data"
-        className="h-11 px-4 rounded-full bg-[var(--surface-card)] border border-[var(--border-subtle)] text-[var(--text-muted)] shadow-sm hover:bg-[var(--warm-100)] hover:text-[var(--text-strong)] flex items-center gap-2 transition-colors"
-      >
-        <span className="w-[16px] h-[16px] inline-flex">
-          <FileText />
-        </span>
-        <span className="text-sm font-medium">Load demo data</span>
-      </button>
-    </div>
-  );
-}
+const DEMO_IDS = new Set(seedMeetingData.map((m) => m.id));
 
 export function App() {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
@@ -69,10 +54,12 @@ export function App() {
   const [recordPrompt, setRecordPrompt] = useState(false);
   const [overlay, setOverlay] = useState<"import" | "settings" | null>(null);
   const [toast, setToast] = useState<{ tone: string; title: string; meta?: string } | null>(null);
+  const [demoVisible, setDemoVisible] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const toastTimer = useRef<NodeJS.Timeout | null>(null);
 
-  const selected = meetings.find((m) => m.id === selectedId) || null;
+  const visibleMeetings = demoVisible ? meetings : meetings.filter((m) => !DEMO_IDS.has(m.id));
+  const selected = visibleMeetings.find((m) => m.id === selectedId) || meetings.find((m) => m.id === selectedId) || null;
   const recording = activeRecording !== null;
 
   const showToast = useCallback((t: { tone: string; title: string; meta?: string }) => {
@@ -88,6 +75,7 @@ export function App() {
     try {
       const next = await seedMeetingsCommand(seedMeetingData);
       setMeetings(next);
+      setDemoVisible(true);
       setSelectedId(null);
       setQuery("");
       setView("home");
@@ -95,6 +83,15 @@ export function App() {
     } catch (error) {
       showToast({ tone: "info", title: "Could not seed SQLite", meta: String(error) });
     }
+  };
+
+  const hideDemoData = () => {
+    setDemoVisible(false);
+    if (selectedId && DEMO_IDS.has(selectedId)) {
+      setSelectedId(null);
+      setView("home");
+    }
+    showToast({ tone: "info", title: "Demo data hidden" });
   };
 
   const startRecording = () => { setOverlay(null); setView("home"); setRecordPrompt(true); };
@@ -275,11 +272,7 @@ export function App() {
 
     async function loadMeetings() {
       try {
-        let next = await listMeetings();
-        if (next.length === 0) {
-          next = await seedMeetingsCommand(seedMeetingData);
-        }
-
+        const next = await listMeetings();
         if (!cancelled) setMeetings(next);
       } catch (error) {
         if (!cancelled) {
@@ -335,14 +328,38 @@ export function App() {
       {/* body */}
       <div className="flex-1 min-h-0 flex relative">
         {view === "home" ? (
-          <Home meetings={meetings} query={query} setQuery={setQuery} onOpen={openMeeting} onRun={runCommand} onRename={renameMeeting} onDeleteRow={deleteMeetingById} onShowInFinder={showInFinder} searchRef={searchRef} />
+          <Home
+            meetings={visibleMeetings}
+            query={query}
+            setQuery={setQuery}
+            onOpen={openMeeting}
+            onRun={runCommand}
+            onRename={renameMeeting}
+            onDeleteRow={deleteMeetingById}
+            onShowInFinder={showInFinder}
+            searchRef={searchRef}
+            demoVisible={demoVisible}
+            onLoadDemo={!loading ? loadDemoData : undefined}
+            onHideDemo={hideDemoData}
+          />
         ) : selected ? (
           <MeetingView m={selected} onBack={goHome} onDelete={deleteMeeting} onTranscribe={transcribeMeeting} />
         ) : (
-          <Home meetings={meetings} query={query} setQuery={setQuery} onOpen={openMeeting} onRun={runCommand} onRename={renameMeeting} onDeleteRow={deleteMeetingById} onShowInFinder={showInFinder} searchRef={searchRef} />
+          <Home
+            meetings={visibleMeetings}
+            query={query}
+            setQuery={setQuery}
+            onOpen={openMeeting}
+            onRun={runCommand}
+            onRename={renameMeeting}
+            onDeleteRow={deleteMeetingById}
+            onShowInFinder={showInFinder}
+            searchRef={searchRef}
+            demoVisible={demoVisible}
+            onLoadDemo={!loading ? loadDemoData : undefined}
+            onHideDemo={hideDemoData}
+          />
         )}
-
-        {!loading && !recording && !overlay && view === "home" && meetings.length === 0 && <DemoDataButton onClick={loadDemoData} />}
         {!recording && !overlay && view === "home" && <RecordFab onClick={startRecording} />}
         {recordPrompt && !recording && <RecordSourcePopup onPick={beginRecording} onCancel={cancelPrompt} />}
         {dimmed && <div className="absolute inset-0 bg-black/20 z-30" onMouseDown={recordPrompt && !recording ? cancelPrompt : undefined} />}
