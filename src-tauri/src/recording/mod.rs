@@ -12,6 +12,7 @@ use std::{
         Arc, Mutex,
     },
     thread::{self, JoinHandle},
+    time::Duration,
 };
 
 use chrono::Utc;
@@ -23,6 +24,16 @@ use wav::{AudioSpec, WavChunker};
 
 const CHUNK_SECONDS: u64 = 30;
 const MAX_DURATION_SECONDS: u64 = 60 * 60;
+fn max_duration_seconds() -> u64 {
+    if cfg!(debug_assertions) {
+        if let Ok(value) = std::env::var("MEMO_DEBUG_MAX_DURATION_SECS") {
+            if let Ok(secs) = value.parse::<u64>() {
+                return secs.clamp(1, MAX_DURATION_SECONDS);
+            }
+        }
+    }
+    MAX_DURATION_SECONDS
+}
 
 type Result<T> = std::result::Result<T, RecordingError>;
 
@@ -170,6 +181,7 @@ enum WriterCommand {
 struct RecordingHandle {
     runtime: Arc<Mutex<RecordingRuntime>>,
     control: Arc<RecordingControl>,
+    completed: Arc<Mutex<Option<RecordingArtifactDto>>>,
     tx: Sender<WriterCommand>,
     capture: Option<CaptureHandle>,
     worker: Option<JoinHandle<()>>,
@@ -268,9 +280,20 @@ impl RecordingManager {
             chunk_count: 0,
         }));
 
+        let completed = Arc::new(Mutex::new(None));
         let worker_runtime = runtime.clone();
+        let worker_control = control.clone();
+        let worker_completed = completed.clone();
         let worker = thread::spawn(move || {
-            writer_loop(rx, worker_runtime, spec, temp_dir, final_path);
+            writer_loop(
+                rx,
+                worker_runtime,
+                worker_control,
+                worker_completed,
+                spec,
+                temp_dir,
+                final_path,
+            );
         });
 
         let dto = runtime.lock().expect("recording runtime poisoned").dto();
@@ -279,6 +302,7 @@ impl RecordingManager {
             RecordingHandle {
                 runtime,
                 control,
+                completed,
                 tx,
                 capture: Some(capture),
                 worker: Some(worker),
@@ -329,12 +353,48 @@ impl RecordingManager {
             runtime.status = RecordingStatus::Finalizing;
         }
 
-        let (reply_tx, reply_rx) = mpsc::channel();
-        handle
-            .tx
-            .send(WriterCommand::Stop(reply_tx))
-            .map_err(|_| RecordingError::WorkerStopped)?;
-        let result = reply_rx.recv().map_err(|_| RecordingError::WorkerStopped)?;
+        let result = if let Some(worker) = handle.worker.as_ref() {
+            if worker.is_finished() {
+                handle
+                    .completed
+                    .lock()
+                    .expect("recording completed poisoned")
+                    .take()
+                    .map(Ok)
+                    .ok_or(RecordingError::WorkerStopped)?
+            } else {
+                let (reply_tx, reply_rx) = mpsc::channel();
+                let send_ok = handle.tx.send(WriterCommand::Stop(reply_tx)).is_ok();
+                if !send_ok {
+                    handle
+                        .completed
+                        .lock()
+                        .expect("recording completed poisoned")
+                        .take()
+                        .map(Ok)
+                        .ok_or(RecordingError::WorkerStopped)?
+                } else {
+                    match reply_rx.recv_timeout(Duration::from_secs(30)) {
+                        Ok(result) => result,
+                        Err(_) => handle
+                            .completed
+                            .lock()
+                            .expect("recording completed poisoned")
+                            .take()
+                            .map(Ok)
+                            .ok_or(RecordingError::WorkerStopped)?,
+                    }
+                }
+            }
+        } else {
+            handle
+                .completed
+                .lock()
+                .expect("recording completed poisoned")
+                .take()
+                .map(Ok)
+                .ok_or(RecordingError::WorkerStopped)?
+        };
         if let Some(worker) = handle.worker.take() {
             let _ = worker.join();
         }
@@ -376,6 +436,8 @@ impl RecordingManager {
 fn writer_loop(
     rx: mpsc::Receiver<WriterCommand>,
     runtime: Arc<Mutex<RecordingRuntime>>,
+    control: Arc<RecordingControl>,
+    completed: Arc<Mutex<Option<RecordingArtifactDto>>>,
     spec: AudioSpec,
     temp_dir: PathBuf,
     final_path: PathBuf,
@@ -401,9 +463,17 @@ fn writer_loop(
                 let mut state = runtime.lock().expect("recording runtime poisoned");
                 state.elapsed_frames = chunker.total_frames();
                 state.chunk_count = chunker.chunk_count();
-                if state.elapsed_frames >= u64::from(state.sample_rate) * MAX_DURATION_SECONDS {
+                let max_frames = u64::from(state.sample_rate) * max_duration_seconds();
+                if state.elapsed_frames >= max_frames {
                     state.status = RecordingStatus::Finalizing;
-                    fail_all(rx, RecordingError::MaxDuration);
+                    drop(state);
+                    control.stopped.store(true, Ordering::SeqCst);
+                    let result = finalize_recording(&runtime, &mut chunker, artifact_id);
+                    if let Ok(artifact) = &result {
+                        *completed.lock().expect("recording completed poisoned") =
+                            Some(artifact.clone());
+                    }
+                    drain_after_complete(rx, result);
                     return;
                 }
             }
@@ -439,6 +509,23 @@ fn finalize_recording(
         duration_s: frames_to_seconds(state.elapsed_frames, state.sample_rate),
         created_at: Utc::now().to_rfc3339(),
     })
+}
+
+fn drain_after_complete(rx: mpsc::Receiver<WriterCommand>, result: Result<RecordingArtifactDto>) {
+    let mut pending = Some(result);
+    for command in rx {
+        match command {
+            WriterCommand::Stop(reply) => {
+                if let Some(result) = pending.take() {
+                    let _ = reply.send(result);
+                }
+            }
+            WriterCommand::Discard(reply) => {
+                let _ = reply.send(Ok(()));
+            }
+            WriterCommand::Samples(_) => {}
+        }
+    }
 }
 
 fn fail_all(rx: mpsc::Receiver<WriterCommand>, error: RecordingError) {
@@ -504,5 +591,72 @@ mod tests {
     #[test]
     fn frame_duration_rounds_down_to_seconds() {
         assert_eq!(frames_to_seconds(96_001, 48_000), 2);
+    }
+
+    #[test]
+    fn max_duration_auto_finalizes_and_leaves_recoverable_artifact() {
+        use std::sync::mpsc;
+
+        let temp = std::env::temp_dir().join(format!(
+            "memo_max_duration_test_{}",
+            std::process::id()
+        ));
+        if temp.exists() {
+            fs::remove_dir_all(&temp).unwrap();
+        }
+        let chunks_dir = temp.join("chunks.tmp");
+        let final_path = temp.join("audio.wav");
+        let spec = AudioSpec {
+            sample_rate: 8_000,
+            channels: 1,
+        };
+
+        std::env::set_var("MEMO_DEBUG_MAX_DURATION_SECS", "1");
+
+        let (tx, rx) = mpsc::channel();
+        let runtime = Arc::new(Mutex::new(RecordingRuntime {
+            id: "rec_test".to_string(),
+            meeting_id: None,
+            source: RecordingSource::Microphone,
+            status: RecordingStatus::Recording,
+            started_at: Utc::now().to_rfc3339(),
+            elapsed_frames: 0,
+            sample_rate: spec.sample_rate,
+            chunk_count: 0,
+        }));
+        let control = Arc::new(RecordingControl::new());
+        let completed = Arc::new(Mutex::new(None));
+        let output_path = final_path.clone();
+        let worker_control = control.clone();
+        let worker_completed = completed.clone();
+        let worker = thread::spawn(move || {
+            writer_loop(
+                rx,
+                runtime,
+                worker_control,
+                worker_completed,
+                spec,
+                chunks_dir,
+                output_path,
+            );
+        });
+
+        tx.send(WriterCommand::Samples(vec![0.0; 8_000]))
+            .expect("one second of samples sent");
+        drop(tx);
+
+        worker.join().expect("worker joined");
+
+        let artifact = completed
+            .lock()
+            .expect("completed poisoned")
+            .clone()
+            .expect("artifact stored after max duration");
+        assert!(final_path.exists());
+        assert_eq!(artifact.duration_s, 1);
+        assert!(artifact.size_bytes > 0);
+        assert!(control.stopped.load(Ordering::SeqCst));
+
+        let _ = fs::remove_dir_all(temp);
     }
 }

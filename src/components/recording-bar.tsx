@@ -25,7 +25,7 @@ export function RecordingBar({
   return (
     <div className="absolute left-1/2 -translate-x-1/2 bottom-6 z-50 flex items-center gap-4 bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-2xl shadow-xl px-5 py-3">
       <span className={`${paused ? "" : "animate-pulse"} w-[11px] h-[11px] rounded-full bg-[var(--live)] shrink-0`} style={{ boxShadow: "0 0 0 4px var(--live-tint)" }} />
-      <span className="font-mono text-[23px] font-normal tracking-widest text-[var(--text-strong)] min-w-[78px] pl-0.5 tabular-nums">
+      <span className="font-mono text-[23px] font-normal tracking-widest text-[var(--text-strong)] min-w-[96px] pl-0.5 tabular-nums">
         {formatTime(session.elapsedS)}
       </span>
       <div className="w-[92px]" style={{ opacity: paused || finalizing ? 0.4 : 1 }}>

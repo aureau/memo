@@ -57,6 +57,8 @@ export function App() {
   const [demoVisible, setDemoVisible] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const toastTimer = useRef<NodeJS.Timeout | null>(null);
+  const userStoppingRef = useRef(false);
+  const autoStoppingRef = useRef(false);
 
   const visibleMeetings = demoVisible ? meetings : meetings.filter((m) => !DEMO_IDS.has(m.id));
   const selected = visibleMeetings.find((m) => m.id === selectedId) || meetings.find((m) => m.id === selectedId) || null;
@@ -98,6 +100,8 @@ export function App() {
   const beginRecording = async (src: string) => {
     setRecordPrompt(false);
     setView("home");
+    userStoppingRef.current = false;
+    autoStoppingRef.current = false;
     try {
       const session = await startNativeRecording(toRecordingSource(src));
       setActiveRecording(session);
@@ -133,9 +137,12 @@ export function App() {
       });
   }, [showToast]);
 
-  const stopRecording = async () => {
+  const stopRecording = useCallback(async () => {
     if (!activeRecording) return;
     const sessionId = activeRecording.id;
+    if (!autoStoppingRef.current) {
+      userStoppingRef.current = true;
+    }
     setActiveRecording({ ...activeRecording, status: "finalizing" });
     try {
       const artifact = await stopNativeRecording(sessionId);
@@ -154,17 +161,26 @@ export function App() {
         audioPath: artifact.filePath,
         firstLine: "",
       };
+      const wasAutoStop = autoStoppingRef.current;
       setActiveRecording(null);
+      userStoppingRef.current = false;
+      autoStoppingRef.current = false;
       setMeetings((list) => [m, ...list]);
-      showToast({ tone: "info", title: "Recording saved", meta: "transcribing…" });
+      showToast({
+        tone: "info",
+        title: "Recording saved",
+        meta: wasAutoStop ? "60 min limit reached" : "transcribing…",
+      });
       const saved = await saveMeeting(m);
       setMeetings((list) => list.map((x) => x.id === m.id ? saved : x));
       runTranscription(saved, artifact.filePath);
     } catch (error) {
       setActiveRecording(null);
+      userStoppingRef.current = false;
+      autoStoppingRef.current = false;
       showToast({ tone: "info", title: "Recording failed", meta: String(error) });
     }
-  };
+  }, [activeRecording, runTranscription, showToast]);
 
   const pauseRecording = async () => {
     if (!activeRecording) return;
@@ -304,12 +320,22 @@ export function App() {
 
     const id = window.setInterval(() => {
       getRecordingStatus(activeRecording.id)
-        .then(setActiveRecording)
+        .then((session) => {
+          setActiveRecording(session);
+          if (
+            session.status === "finalizing" &&
+            !userStoppingRef.current &&
+            !autoStoppingRef.current
+          ) {
+            autoStoppingRef.current = true;
+            void stopRecording();
+          }
+        })
         .catch(() => {});
     }, 1000);
 
     return () => window.clearInterval(id);
-  }, [activeRecording?.id]);
+  }, [activeRecording?.id, stopRecording]);
 
   const dimmed = recording || recordPrompt;
 

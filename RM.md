@@ -4,6 +4,9 @@
     - Settings revamp
 
 
+correctly formatting recording
+    right now most of my recordings are formatted wrong
+
 notepad while recording
     in the @recording-bar state, going have an interactive notepad (interactive as in being able to type freely), open and close, and **saved** to the Notes tab in @meeting-view
     going to be using the same styling as meeting-view notes area
